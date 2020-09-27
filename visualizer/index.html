@@ -1,0 +1,211 @@
+<!-- Alt+Click => http://localhost:8080/ -->
+
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chokudai 5 visualizer</title>
+  <style>
+    .row {
+      display: flex;
+    }
+
+    .cell {
+      flex: 0 0 0.5rem;
+      background: red;
+      width: 0.5rem;
+      height: 0.5rem;
+      border: 0.05rem solid white;
+    }
+    
+    #app {
+      display: flex;
+      flex-direction: row;
+    }
+
+    .right {
+      margin-left: 2rem;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app" class="content">
+    <div class="left">
+      <h1 class="title is-size-1 has-text-danger">chokudai5 visualizer</h1>
+      <h2>in</h2>
+      <textarea v-model="input" cols="30" rows="10"></textarea>
+      <h2>out</h2>
+      <textarea v-model="output" cols="30" rows="10"></textarea><br>
+      <button @click="parseInput">読み込み</button>
+      <button @click="prev" disabled>◀</button>
+      <span>{{step}}</span>
+      <button @click="next" :disabled="auto">▶</button>
+      <button @click="toggleAuto">Toggle Auto Mode</button>
+      <button @click="noWait">nowait</button>
+      <h1>Score: {{score}}</h1>
+    </div>
+    <div class="right">
+      <div class="row" v-for="y in n" :key="y">
+        <div class="cell" v-for="x in n" :key="x" :style="{backgroundColor: getBg(x - 1, y - 1)}">
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="https://unpkg.com/vue/dist/vue.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.20/lodash.min.js"
+    integrity="sha512-90vH1Z83AJY9DmlWa8WkjkV79yfS2n2Oxhsi2dZbIv0nC4E6m5AbH8Nh156kkM7JePmqD6tcZsfad1ueoaovww=="
+    crossorigin="anonymous"></script>
+  <script>
+    new Vue({
+      el: '#app',
+      data: () => ({
+        input: [
+          '0 6 9',
+          '515795',
+          '153859',
+          '833597',
+          '333419',
+          '333121',
+          '533917\n',
+        ].join('\n'),
+        output: [
+          '100',
+          ...(Array(100).fill().map(() => {
+            const x = _.random(1, 6);
+            const y = _.random(1, 6);
+            const c = _.random(1, 9);
+            return `${x} ${y} ${c}`;
+          })),
+        ].join('\n') + '\n',
+        n: 0,
+        k: 0,
+        cells: [],
+        ops: [],
+        step: 0,
+        score: 0,
+        auto: false,
+        intervalId: null,
+      }),
+      computed: {
+      },
+      methods: {
+        parseInput() {
+          const lines = this.input.split('\n');
+          const vars = lines[0].split(' ').map((i) => parseInt(i));
+          this.n = vars[1];
+          this.k = vars[2];
+          this.cells = lines.slice(1).join('').split('').filter((c) => '123456789'.includes(c)).map((i) => parseInt(i));
+
+          const outputLines = this.output.split('\n');
+          const n = parseInt(outputLines[0]);
+          const ops = outputLines.slice(1).slice(0, n);
+          this.ops = ops.map((line) => {
+            const [y, x, c] = line.split(' ').map((n) => parseInt(n));
+            return {y, x, c};
+          });
+          this.step = 0;
+          this.score = 0;
+          this.auto = false;
+        },
+        getBg(x, y) {
+          const cell = this.cells[y * this.n + x];
+          return [
+            'red',
+            'yellow',
+            'blue',
+            'cyan',
+            'green',
+            'pink',
+            'orange',
+            'black',
+            'grey',
+          ][cell - 1];
+        },
+        prev() {
+
+        },
+        next() {
+          if (this.step >= this.ops.length) {
+            if (this.auto) {
+              this.stopAuto();
+            }
+            return;
+          }
+
+          const op = this.ops[this.step];
+          const i = this.xy(op.x - 1, op.y - 1);
+
+          const queue = [i];
+          const visited = new Set();
+          const color = this.cells[i];
+
+          while (queue.length > 0) {
+            const i = queue.shift();
+            const [x, y] = this.toxy(i);
+            if (visited.has(i)) {
+              continue;
+            }
+            if (this.cells[i] !== color) {
+              continue;
+            }
+            visited.add(i);
+            this.cells[i] = op.c;
+
+            if (x - 1 >= 0) {
+              queue.push(this.xy(x - 1, y));
+            }
+            if (x + 1 < this.n) {
+              queue.push(this.xy(x + 1, y));
+            }
+            if (y - 1 >= 0) {
+              queue.push(this.xy(x, y - 1));
+            }
+            if (y + 1 < this.n) {
+              queue.push(this.xy(x, y + 1));
+            }
+          }
+
+          const counter = _.countBy(this.cells);
+          const [maxColor, maxCount] = _.maxBy(Array.from(Object.entries(counter)), ([, c]) => c);
+
+          this.step++;
+          this.score = maxCount * 100 - this.step;
+        },
+        toggleAuto() {
+          this.auto = !this.auto;
+          if (this.auto) {
+            this.startAuto();
+          } else {
+            this.stopAuto();
+          }
+        },
+        noWait() {
+          this.auto = true;
+          while (this.step < this.ops.length) {
+            this.next();
+          }
+          this.auto = false;
+        },
+        startAuto() {
+          this.intervalId = setInterval(() => {
+            this.next();
+          }, 50);
+        },
+        stopAuto() {
+          clearInterval(this.intervalId);
+        },
+        xy(x, y) {
+          return y * this.n + x;
+        },
+        toxy(i) {
+          return [i % this.n, Math.floor(i / this.n)];
+        },
+      },
+    });
+  </script>
+</body>
+
+</html>
